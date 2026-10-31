@@ -1,0 +1,64 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# ----------------- Configuration -----------------
+# Default paths for data and checkpoints.
+# You can override these with command-line arguments.
+#
+# Example usage:
+# ./run_dev.sh --data-dir /path/to/your/data --checkpoints-dir /path/to/your/checkpoints
+
+DATA_DIR="/data/codonfm"
+CHECKPOINTS_DIR="/data/codonfm/checkpoints"
+
+# Parse command-line arguments for paths
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --data-dir) DATA_DIR="$2"; shift ;;
+        --checkpoints-dir) CHECKPOINTS_DIR="$2"; shift ;;
+        -h|--help)
+            echo "Usage: $0 [--data-dir <path>] [--checkpoints-dir <path>]"
+            exit 0
+            ;;
+        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+    esac
+    shift
+done
+
+IMAGE_NAME="codon-fm-dev"
+CONTAINER_NAME="codon-fm-dev-container"
+
+echo "Building the development docker image..."
+# Build the development image using the 'development' stage in the Dockerfile
+docker build -t "${IMAGE_NAME}" \
+  --target development \
+  --build-arg USERNAME="$(whoami)" \
+  --build-arg USER_UID="$(id -u)" \
+  --build-arg USER_GID="$(id -g)" \
+  -f Dockerfile .
+
+# Check if a container with the same name is already running and stop it
+if [ "$(docker ps -q -f name="^/${CONTAINER_NAME}$")" ]; then
+    echo "Stopping and removing existing container..."
+    docker stop "${CONTAINER_NAME}"
+    docker rm "${CONTAINER_NAME}"
+fi
+
+echo "Launching the development container with the following mounts:"
+echo "  - Host: $(pwd) -> Container: /workspace"
+echo "  - Host: ${DATA_DIR} -> Container: /data"
+echo "  - Host: ${CHECKPOINTS_DIR} -> Container: /data/checkpoints"
+
+# Launch with isolated container networking and IPC. A larger shared-memory allocation
+# supports PyTorch data loading without joining the host IPC namespace.
+docker run -it --rm \
+  --gpus all \
+  --shm-size=16g \
+  -v "$(pwd)":/workspace \
+  -v "${DATA_DIR}":/data \
+  -v "${CHECKPOINTS_DIR}":/data/checkpoints \
+  -p 8888:8888 \
+  --name "${CONTAINER_NAME}" \
+  "${IMAGE_NAME}" \
+  bash

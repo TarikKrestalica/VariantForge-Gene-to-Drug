@@ -1,0 +1,5 @@
+bio_models/venv/
+bio_models/**/weights/
+*.pt
+*.bin
+bio_models/venv/
